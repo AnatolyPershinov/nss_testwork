@@ -1,4 +1,4 @@
-# read excel file to object. send excel object to handler. save data from handler in csv
+# manage parsers
 from parser1 import main as handler1
 
 

@@ -1,5 +1,4 @@
 import csv
-
 from typing import List
 from dataclasses import dataclass
 from openpyxl import load_workbook
@@ -18,6 +17,7 @@ class Work:
         result.update(dict(zip([str(day) +" plan" for day in header], self.plan_schedule)))
         result.update(dict(zip([str(day) +" fact" for day in header], self.fact_schedule)))
         return result
+
 
 @dataclass
 class Resource:
