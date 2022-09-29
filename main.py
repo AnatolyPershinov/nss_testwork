@@ -1,5 +1,5 @@
 # manage parsers
-from parser1 import main as handler1
+from parsers.parser1 import main as handler1
 
 
 def main():

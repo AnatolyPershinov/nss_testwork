@@ -1,4 +1,6 @@
 import csv
+import os
+
 from typing import List
 from dataclasses import dataclass
 from openpyxl import load_workbook
@@ -106,6 +108,10 @@ def main(path: str):
     for month in months:
         ws = workbook.get_sheet_by_name(month["name"])
         works, resources = parser(ws, days=month["days"])
-        save_to_csv("activites.csv", works)
-        save_to_csv("resources.csv", resources)
+        path = f"results/file1/{month['name']}/"
 
+        if not os.path.exists(path):
+            os.makedirs(path)
+
+        save_to_csv(path+"activities.csv", works)
+        save_to_csv(path+"resources.csv", resources)
