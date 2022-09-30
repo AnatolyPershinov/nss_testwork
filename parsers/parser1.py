@@ -81,24 +81,23 @@ def parser(sheet: Worksheet, days = int) ->  tuple[list[Work], list[Resource]]:
 
         row = sheet[cell.row]
         fact_row = sheet[cell.row+1] # строка с фактической активностью
+        if row[1].value is None:
+            print(f"unknown action name in sheet: {sheet.title} row: {cell.row}. skip it.")
+            continue
 
         # списки с календарями активности
         # информация об активнсти по дням расположена слева от колокни "план/факт"
         # поэтому берертся срез списка, [индекс колонки:индекс колокни + кол-во дней в месяце] 
         plan_schedule = [c.value for c in row[ident_column:ident_column+days]]
         fact_schedule = [c.value for c in fact_row[ident_column:ident_column+days]]
-        try:
-            works.append(Work(
-            index=len(works),
-            name=row[1].value+"_act",
-            plan_schedule=[0 if v is None else v for v in plan_schedule], # заменить None на 0
-            fact_schedule=[0 if v is None else v for v in fact_schedule]
+
+        works.append(Work(
+        index=len(works),
+        name=row[1].value+"_act",
+        plan_schedule=[0 if v is None else v for v in plan_schedule], # заменить None на 0
+        fact_schedule=[0 if v is None else v for v in fact_schedule]
         ))
-        except Exception as e:
-            if row[1].value is None:
-                print(f"unknown action name in sheet: {sheet.title} row: {cell.row}. skip it.")
-            else:
-                print(Exception)                
+              
         
     # часть 2. поиск ресурсов
     start_pos = 0
