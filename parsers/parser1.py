@@ -1,9 +1,14 @@
 import csv
+from io import UnsupportedOperation
 import os
 
 from typing import List
 from dataclasses import dataclass
+from wsgiref.util import shift_path_info
 from openpyxl import load_workbook
+from openpyxl.utils.cell import get_column_letter
+from openpyxl.worksheet.worksheet import Worksheet
+
 
 
 @dataclass
@@ -34,52 +39,92 @@ class Resource:
         return result
 
 
-def parser(sheet, days : int) ->  tuple[list[Work], list[Resource]]:
-    # collect information about works and resources
+def remove_extra_char(s: str) -> str:
+    # удаление из строки символов переноса, пробелов, заглавных букв
+    if type(s) is str:
+        return s.replace("\n", "").replace(" ", "").lower()
+    else:
+        return ""
+
+
+def parser(sheet: Worksheet, days = int) ->  tuple[list[Work], list[Resource]]:
+    # метод собирает информацию об активностях и ресурсах
     works: List[Work] = []
     resources: List[Resource] = []
+    # поиск заголовка
+    header_row = 0
+    for cell in sheet["A"]:
+        if cell.value is None: 
+            continue
+        elif remove_extra_char(cell.value) == "№п/п":
+            header_row = cell.row
+            break
+    # парсинг заголовка
+    # поиск колонки с именем, поиск колонки-разделителя
+    name_column = 0
+    ident_column = 0
 
-    # part1. parse works
-    # work rows contain cell with value "план"   
-    for cell in sheet["S"]:
+    for cell in sheet[header_row]:
+        if cell.value is None:
+            continue
+        elif remove_extra_char(cell.value) == "наименованиеработ":
+            name_column = cell.column
+        elif remove_extra_char(cell.value) == "днимес.":
+            ident_column = cell.column # индекс колонки план/факт
+
+    # часть 1. парсинг активностей
+    # поиск колонки с идентификацией фактический и плановой активности
+    # информация об активности содержится в строках с записью "план"
+    for cell in sheet[get_column_letter(ident_column)]:
         if cell.value != "план":
             continue
 
         row = sheet[cell.row]
-        fact_row = sheet[cell.row+1] # row with fact activity
+        fact_row = sheet[cell.row+1] # строка с фактической активностью
+        if row[1].value is None:
+            print(f"unknown action name in sheet: {sheet.title} row: {cell.row}. skip it.")
+            continue
 
-        # create lists of schedules
-        plan_schedule = [c.value for c in row[19:19+days]]
-        fact_schedule = [c.value for c in fact_row[19:19+days]]
+        # списки с календарями активности
+        # информация об активнсти по дням расположена слева от колокни "план/факт"
+        # поэтому берертся срез списка, [индекс колонки:индекс колокни + кол-во дней в месяце] 
+        plan_schedule = [c.value for c in row[ident_column:ident_column+days]]
+        fact_schedule = [c.value for c in fact_row[ident_column:ident_column+days]]
+
         works.append(Work(
-            index=len(works),
-            name=row[1].value+"_act",
-            plan_schedule=[0 if v is None else v for v in plan_schedule], # replace none to 0
-            fact_schedule=[0 if v is None else v for v in fact_schedule]
+        index=len(works),
+        name=row[1].value+"_act",
+        plan_schedule=[0 if v is None else v for v in plan_schedule], # заменить None на 0
+        fact_schedule=[0 if v is None else v for v in fact_schedule]
         ))
+              
         
-    # part2. parse resources
+    # часть 2. поиск ресурсов
     start_pos = 0
     end_pos = 0
     resource_rows = []
 
-    for cell in sheet["B"]:
-        if cell.value == "Наименование и марка техники (механизма), оборудования":
+    for cell in sheet[get_column_letter(name_column)]:
+        if cell.value is None:
+            continue
+        elif remove_extra_char(cell.value) == "наименованиеимаркатехники(механизма),оборудования":
             start_pos = cell.row + 2
-        elif cell.value == "Наименование субподрядной организации":
-            end_pos = cell.row-4
+        elif remove_extra_char(cell.value) == "наименованиесубподряднойорганизации":
+            end_pos = cell.row-3
             break
     
-    for cell in sheet["B"][start_pos:end_pos]:
-        if cell.value is not None and cell.value != "Наименование должностей, профессий":
+    for cell in sheet[get_column_letter(name_column)][start_pos:end_pos]:
+        if cell.value is not None and remove_extra_char(cell.value) != "наименованиедолжностей,профессий":
             resource_rows.append(sheet[cell.row])
 
-    for cell in sheet["B"][end_pos+6:]:
-        if cell.value is not None and cell.value != "Наименование субподрядной организации" and cell.value != 2:
+    for cell in sheet[get_column_letter(name_column)][end_pos+6:]:
+        if cell.value is not None and remove_extra_char(cell.value) != "наименованиесубподряднойорганизации" and cell.value != 2:
+            if sheet[cell.row][0].value is None:
+                continue
             resource_rows.append(sheet[cell.row])
 
     for resource in resource_rows:
-        plan_schedule = [c.value for c in resource[19:19+days]]
+        plan_schedule = [c.value for c in resource[ident_column:ident_column+days]]
         
         resources.append(Resource(
             index=len(resources),
@@ -101,14 +146,18 @@ def save_to_csv(filename, array):
 
 def main(path: str):
     workbook = load_workbook(path)
+
     months = [
-        {"name": "Ноябрь", "days" : 30},
+        ('февраль', 28),('март',31), ('апрель', 30), 
+        ('май', 31), ('июнь',30), ('июль', 31), 
+        ('август', 31), ('сентябрь',30), ('ОКТЯБРЬ', 31), 
+        ('Ноябрь', 30), ('Декабрь', 31)
     ]
 
     for month in months:
-        ws = workbook.get_sheet_by_name(month["name"])
-        works, resources = parser(ws, days=month["days"])
-        path = f"results/file1/{month['name']}/"
+        ws = workbook.get_sheet_by_name(month[0])
+        works, resources = parser(sheet=ws, days=month[1])
+        path = f"results/file1/{month[0].lower()}/"
 
         if not os.path.exists(path):
             os.makedirs(path)
